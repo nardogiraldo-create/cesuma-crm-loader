@@ -24,7 +24,6 @@ def automatizar_crm(data):
     
     try:
         # ... (El resto de tu lógica de login y automatización sigue aquí) ...
-}
 
 # --- FUNCIÓN PRINCIPAL DE AUTOMATIZACIÓN ---
 def automatizar_crm(data):
