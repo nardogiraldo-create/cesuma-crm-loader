@@ -1,33 +1,29 @@
-# app.py - Script de Automatización CRM (Selenium Headless)
-# ... (imports y configuraciones se mantienen) ...
+# app.py (dentro de la función automatizar_crm)
 
-SELECTORS = {
-    # Login
-    "USER_INPUT": "input[type='email']", 
-    "PASS_INPUT": "input[type='password']",
-    "LOGIN_BTN": "button[type='submit']", 
+# ... (Las configuraciones de CRM_URL, CRM_USER, etc., se mantienen) ...
+
+def automatizar_crm(data):
+    """Automatiza la carga de un prospecto en el CRM."""
     
-    # Flujo Familiar (Paso 1) - Revisado el botón Continuar
-    "FAMILIA_DROPDOWN": "select[id*='ddlFamilia']", 
-    "CONTINUAR_BTN": "button:contains('Continuar')", # <--- AJUSTADO
+    # 1. Configuración de opciones Headless para Render
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
     
-    # Formulario Prospecto (Paso 2)
-    "NOMBRE": "input[id*='txtNombre']", 
-    "APELLIDO_PATERNO": "input[id*='txtApellidoPaterno']",
-    "SEXO": "select[id*='ddlSexo']",
-    "EMAIL": "input[id*='txtCorreoElectronico']",
-    "FECHA_NACIMIENTO": "input[id*='txtFechaNacimiento']",
-    "CURP_ID": "input[id*='txtID']", 
-    "TEL_CELULAR": "input[id*='txtTelefonoCelular']",
-    "TEL_COMUNICARSE_CEL_CHECK": "input[id*='chkCelular']", 
+    # 2. Configuración específica para Render usando CHROME_BIN
+    # Esto es crucial para que el navegador funcione en el entorno Linux de Render
+    # y para evitar el error 'chromedriver executable needs to be in PATH'
+    if 'CHROME_BIN' in os.environ:
+        chrome_options.binary_location = os.environ['CHROME_BIN']
+        
+    # Inicializar el driver (ahora usa las opciones binarias)
+    driver = webdriver.Chrome(options=chrome_options)
+    wait = WebDriverWait(driver, 20)
     
-    # Datos de Programa (Paso 3)
-    "OFERTA_EDUCATIVA": "select[id*='ddlOfertaEducativa']",
-    "PERIODO": "select[id*='ddlPeriodo']",
-    "TIPO_HORARIO": "select[id*='ddlHorario']",
-    "DEPARTAMENTO_ASIGNADO": "select[id*='ddlDepartamentoAsignado']",
-    "ESTATUS_SEGUIMIENTO": "select[id*='ddlEstatusSeguimiento']",
-    "GUARDAR_BTN": "button:contains('Guardar')" # <--- AJUSTADO
+    try:
+        # ... (El resto de tu lógica de login y automatización sigue aquí) ...
 }
 
 # --- FUNCIÓN PRINCIPAL DE AUTOMATIZACIÓN ---
