@@ -139,7 +139,18 @@ driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).send_keys("0
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])))
         
         # Seleccionar campos fijos o predeterminados
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])).select_by_visible_text("DOCTORADO EN EDUCACIÓN")
+     # OFERTA EDUCATIVA DINÁMICA
+oferta_value = data.get("OFERTA_EDUCATIVA", "").strip()
+
+try:
+    Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])) \
+        .select_by_visible_text(oferta_value)
+except:
+    return {
+        "status": "error",
+        "message": f"La oferta educativa '{oferta_value}' no existe en el CRM o no coincide exactamente."
+    }
+
         Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["PERIODO"])).select_by_visible_text("MIXTO")
         Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["TIPO_HORARIO"])).select_by_visible_text("COMERCIAL CALI")
         Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["DEPARTAMENTO_ASIGNADO"])).select_by_visible_text("COMERCIAL CALI")
