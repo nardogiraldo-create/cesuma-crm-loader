@@ -30,33 +30,48 @@ EXPOSE 10000
 CMD ["gunicorn", "app:app", "--workers", "1", "--timeout", "120", "--bind", "0.0.0.0:10000"]
 ```
 
-5. Commit
+5. Click en **"Commit new file"** (botón verde)
 
 ---
 
-## 🎯 Después de subir el archivo:
+## **PASO 2: Configurar Render**
 
-### Si subiste `render-build.sh`:
-1. Ve a Render Dashboard
-2. **Manual Deploy** → **"Clear build cache & deploy"**
-3. Espera 5 minutos
-4. Revisa los logs
-
-### Si subiste `Dockerfile`:
-1. Render lo detectará automáticamente
-2. En Settings, borra el Build Command (déjalo vacío)
-3. Borra el Start Command también
-4. Guarda cambios
-5. **Manual Deploy** → **"Clear build cache & deploy"**
+1. Ve a tu servicio en Render Dashboard
+2. Click en **"Settings"** (menú lateral)
+3. En la sección **"Build & Deploy"**:
+   - **Build Command**: BORRA TODO (deja el campo VACÍO)
+   - **Start Command**: BORRA TODO (deja el campo VACÍO)
+4. Scroll hasta el final y click en **"Save Changes"** (botón rojo)
 
 ---
 
-## ✅ Checklist de tu repositorio en GitHub:
+## **PASO 3: Deploy**
 
-Después de subir los archivos, tu repo debe tener:
+1. Ve a la pestaña **"Manual Deploy"** (arriba)
+2. Click en **"Clear build cache & deploy"**
+3. **Espera 5-10 minutos** (el primer build con Docker tarda más)
+
+---
+
+## **PASO 4: Verificar que funcione**
+
+Deberías ver en los logs:
 ```
-tu-repositorio/
-├── app.py                      ✅
-├── requirements.txt            ✅
-├── render-build.sh            ✅ NUEVO (Opción 1)
-└── Dockerfile                 ✅ NUEVO (Opción 2 - mejor)
+==> Building with Dockerfile
+Step 1/10 : FROM python:3.11-slim
+Step 2/10 : ENV PYTHONUNBUFFERED=1
+...
+✅ Chromium version 1xx.x.xxxx.xx
+✅ ChromeDriver 1xx.x.xxxx.xx
+...
+==> Build successful
+==> Deploying...
+```
+
+---
+
+## ⏱️ Mientras esperas el deploy:
+
+Compárteme una captura o texto de los logs cuando empiece el build. Deberían decir algo como:
+```
+==> Building with Dockerfile
