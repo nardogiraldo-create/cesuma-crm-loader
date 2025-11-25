@@ -10,11 +10,18 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- FIX: asegurar chromedriver en /usr/bin ----
+RUN set -eux; \
+    if [ -f /usr/lib/chromium/chromedriver ]; then ln -sf /usr/lib/chromium/chromedriver /usr/bin/chromedriver; fi; \
+    if [ -f /usr/lib/chromium-browser/chromedriver ]; then ln -sf /usr/lib/chromium-browser/chromedriver /usr/bin/chromedriver; fi; \
+    if [ -f /usr/lib/chromedriver/chromedriver ]; then ln -sf /usr/lib/chromedriver/chromedriver /usr/bin/chromedriver; fi; \
+    chmod +x /usr/bin/chromedriver || true
+
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-RUN which chromium && chromium --version && \
-    which chromedriver && chromedriver --version
+RUN echo "Chrome -> $(which chromium)"; chromium --version; \
+    echo "Driver -> $(which chromedriver)"; chromedriver --version
 
 WORKDIR /app
 
