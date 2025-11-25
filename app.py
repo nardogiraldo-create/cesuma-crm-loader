@@ -123,8 +123,7 @@ def automatizar_crm(data):
         driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_CELULAR"]).send_keys(data.get("Telefono Celular", ""))
 
         # Seleccionar Sexo
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["SEXO"])).select_by_visible_text(data.get("Sexo", "Indistinto"))
-        
+    
         # Marcar casilla "Comunicarse"
         cel_checkbox = driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_COMUNICARSE_CEL_CHECK"])
         if not cel_checkbox.is_selected():
