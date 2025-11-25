@@ -2,234 +2,247 @@ import os
 import time
 import json
 from flask import Flask, request, jsonify
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    WebDriverException,
+)
 
 # ==============================================================================
-# 1. CONFIGURACIÓN INICIAL
-# Render usará estas variables de entorno, definidas en el dashboard de Render.
-# Se usan valores predeterminados de ejemplo si no están definidos.
+# 1) CONFIGURACIÓN INICIAL (Render Environment Variables)
 # ==============================================================================
-CRM_URL = os.environ.get("CRM_URL", "https://tucrm.com/pagina_de_login")
-CRM_USER = os.environ.get("CRM_USER", "usuario@ejemplo.com")
-CRM_PASS = os.environ.get("CRM_PASS", "tu_contraseña_segura")
+CRM_URL = os.environ.get("CRM_URL", "").strip()  # Debe ser tu URL real de login
+CRM_USER = os.environ.get("CRM_USER", "").strip()
+CRM_PASS = os.environ.get("CRM_PASS", "").strip()
+
+# Ubicación de binarios en Render (agregar en Environment Variables)
+CHROME_BIN = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
+CHROMEDRIVER_PATH = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
 
 app = Flask(__name__)
 
-# Mapeo de selectores (IDs o CSS) basado en la estructura de las imágenes del CRM
+# ==============================================================================
+# 2) SELECTORES (ajusta si el CRM cambia IDs)
+# ==============================================================================
 SELECTORS = {
     # Login
-    "USER_INPUT": "input[type='email']", 
+    "USER_INPUT": "input[type='email']",
     "PASS_INPUT": "input[type='password']",
-    "LOGIN_BTN": "button[type='submit']", 
-    
+    "LOGIN_BTN": "button[type='submit']",
+
     # Flujo Familiar (Paso 1)
-    "FAMILIA_DROPDOWN": "select[id*='ddlFamilia']", 
-    
+    "FAMILIA_DROPDOWN": "select[id*='ddlFamilia']",
+
     # Formulario Prospecto (Paso 2)
-    "NOMBRE": "input[id*='txtNombre']", 
+    "NOMBRE": "input[id*='txtNombre']",
     "APELLIDO_PATERNO": "input[id*='txtApellidoPaterno']",
-    "SEXO": "select[id*='ddlSexo']",
+    "SEXO": "select[id*='ddlSexo']",  # ya NO lo usaremos si es default en CRM
     "EMAIL": "input[id*='txtCorreoElectronico']",
     "FECHA_NACIMIENTO": "input[id*='txtFechaNacimiento']",
-    "CURP_ID": "input[id*='txtID']", 
+    "CURP_ID": "input[id*='txtID']",
     "TEL_CELULAR": "input[id*='txtTelefonoCelular']",
-    # Casilla para indicar si el celular es para comunicarse
-    "TEL_COMUNICARSE_CEL_CHECK": "input[id*='chkCelular']", 
-    
+    "TEL_COMUNICARSE_CEL_CHECK": "input[id*='chkCelular']",
+
     # Datos de Programa (Paso 3)
     "OFERTA_EDUCATIVA": "select[id*='ddlOfertaEducativa']",
     "PERIODO": "select[id*='ddlPeriodo']",
     "TIPO_HORARIO": "select[id*='ddlHorario']",
     "DEPARTAMENTO_ASIGNADO": "select[id*='ddlDepartamentoAsignado']",
     "ESTATUS_SEGUIMIENTO": "select[id*='ddlEstatusSeguimiento']",
-    
+
     # Botones
-    "GUARDAR_BTN_XPATH": "//button[contains(., 'Guardar')]", 
-    "CONTINUAR_BTN_XPATH": "//button[contains(., 'Continuar')]"
+    "GUARDAR_BTN_XPATH": "//button[contains(., 'Guardar')]",
+    "CONTINUAR_BTN_XPATH": "//button[contains(., 'Continuar')]",
 }
 
 # ==============================================================================
-# 2. FUNCIÓN PRINCIPAL DE AUTOMATIZACIÓN CON SELENIUM
+# 3) FUNCIÓN PRINCIPAL DE AUTOMATIZACIÓN
 # ==============================================================================
-def automatizar_crm(data):
+def automatizar_crm(data: dict):
     """
-    Recibe los datos del prospecto y realiza la automatización en el CRM.
-    
-    Args:
-        data (dict): Datos del prospecto desde Google Apps Script.
+    Recibe datos del prospecto y realiza la automatización en el CRM con Selenium.
     """
-    
-    # 1. Configuración de opciones Headless para Render
+    if not CRM_URL or not CRM_USER or not CRM_PASS:
+        return {
+            "status": "error",
+            "message": "Faltan variables de entorno CRM_URL, CRM_USER o CRM_PASS en Render."
+        }
+
     chrome_options = Options()
-    # Parámetros cruciales para que Chrome corra en un entorno Linux Headless
-    chrome_options.add_argument("--headless")
+    # Headless moderno para Chrome reciente
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
-    
-    # Configuración específica para Render usando CHROME_BIN
-    # Esto ayuda a Selenium a encontrar el binario de Chrome instalado
-    if 'CHROME_BIN' in os.environ:
-        chrome_options.binary_location = os.environ['CHROME_BIN']
-        
-    driver = None # Inicializar driver fuera del try para el finally
-    
+    chrome_options.binary_location = CHROME_BIN
+
+    driver = None
     try:
-        # Inicializar el driver de Chrome con las opciones configuradas
-        driver = webdriver.Chrome(options=chrome_options)
-        # Espera implícita y explícita para cargar elementos
+        # Iniciar Chrome indicando ruta de chromedriver
+        service = webdriver.chrome.service.Service(CHROMEDRIVER_PATH)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
         driver.implicitly_wait(10)
-        wait = WebDriverWait(driver, 20)
-        
-        # 1. LOGIN
+        wait = WebDriverWait(driver, 25)
+
+        # ---------------------------
+        # 1) LOGIN
+        # ---------------------------
         driver.get(CRM_URL)
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS["USER_INPUT"])))
-        
+
         driver.find_element(By.CSS_SELECTOR, SELECTORS["USER_INPUT"]).send_keys(CRM_USER)
         driver.find_element(By.CSS_SELECTOR, SELECTORS["PASS_INPUT"]).send_keys(CRM_PASS)
         driver.find_element(By.CSS_SELECTOR, SELECTORS["LOGIN_BTN"]).click()
-        
-        # Esperar a que el login sea exitoso (cambio de URL o aparición de un elemento post-login)
+
         wait.until(EC.url_changes(CRM_URL))
-        
-        # Navegar a la página de nuevo prospecto (Ajustar según la URL real)
-        # Si esta URL no existe o es incorrecta, el script fallará.
-        driver.get(CRM_URL + "/Prospecto/Nuevo") 
-        time.sleep(2) # Pausa para asegurar que la página de prospecto cargue
-        
-        # 2. PASO 1: INFORMACIÓN FAMILIAR
+
+        # ---------------------------
+        # 2) IR A NUEVO PROSPECTO
+        # Ajusta la ruta si tu CRM usa otra URL interna
+        # ---------------------------
+        driver.get(CRM_URL.rstrip("/") + "/Prospecto/Nuevo")
+        time.sleep(2)
+
+        # ---------------------------
+        # 3) PASO 1: FAMILIA
+        # ---------------------------
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS["FAMILIA_DROPDOWN"])))
-        
-        # Seleccionar "No registrar" en el dropdown de familia
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["FAMILIA_DROPDOWN"])).select_by_visible_text("No registrar")
-        
-        # Clic en el botón "Continuar" usando XPath para buscar el texto del botón
+        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["FAMILIA_DROPDOWN"])) \
+            .select_by_visible_text("No registrar")
+
         wait.until(EC.element_to_be_clickable((By.XPATH, SELECTORS["CONTINUAR_BTN_XPATH"]))).click()
-        
-        # 3. PASO 2: INFORMACIÓN DEL PROSPECTO 
+
+        # ---------------------------
+        # 4) PASO 2: DATOS PERSONALES
+        # ---------------------------
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS["NOMBRE"])))
-        
-        # Llenar campos de texto
+
         driver.find_element(By.CSS_SELECTOR, SELECTORS["NOMBRE"]).send_keys(data.get("Nombre", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["APELLIDO_PATERNO"]).send_keys(data.get("Apellido Paterno", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["EMAIL"]).send_keys(data.get("Correo Electronico", ""))
-      # Fecha fija siempre
-driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).clear()
-driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).send_keys("01/01/2000")
+
+        # Fecha fija siempre
+        fecha_input = driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"])
+        try:
+            fecha_input.clear()
+        except Exception:
+            pass
+        fecha_input.send_keys("01/01/2000")
 
         driver.find_element(By.CSS_SELECTOR, SELECTORS["CURP_ID"]).send_keys(data.get("CURP_ID", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_CELULAR"]).send_keys(data.get("Telefono Celular", ""))
 
-        # Seleccionar Sexo
-    
+        # ⚠️ Sexo NO se toca: el CRM lo deja por defecto.
+        # Si alguna vez quieres activarlo dinámico, descomenta:
+        # Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["SEXO"])) \
+        #     .select_by_visible_text(data.get("Sexo", "Indistinto"))
+
         # Marcar casilla "Comunicarse"
-        cel_checkbox = driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_COMUNICARSE_CEL_CHECK"])
-        if not cel_checkbox.is_selected():
-             cel_checkbox.click()
-             
-        # Clic en "Continuar" para pasar al paso 3
+        try:
+            cel_checkbox = driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_COMUNICARSE_CEL_CHECK"])
+            if not cel_checkbox.is_selected():
+                cel_checkbox.click()
+        except Exception:
+            pass
+
         wait.until(EC.element_to_be_clickable((By.XPATH, SELECTORS["CONTINUAR_BTN_XPATH"]))).click()
 
-        # 4. PASO 3: DATOS DE PROGRAMA
+        # ---------------------------
+        # 5) PASO 3: DATOS DE PROGRAMA
+        # ---------------------------
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])))
-        
-        # Seleccionar campos fijos o predeterminados
-     # OFERTA EDUCATIVA DINÁMICA
-oferta_value = data.get("OFERTA_EDUCATIVA", "").strip()
 
-try:
-    Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])) \
-        .select_by_visible_text(oferta_value)
-except:
-    return {
-        "status": "error",
-        "message": f"La oferta educativa '{oferta_value}' no existe en el CRM o no coincide exactamente."
-    }
+        # Oferta educativa dinámica (viene de la hoja)
+        oferta_value = (data.get("OFERTA_EDUCATIVA") or "").strip()
+        if not oferta_value:
+            return {
+                "status": "error",
+                "message": "OFERTA_EDUCATIVA viene vacía desde la hoja."
+            }
 
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["PERIODO"])).select_by_visible_text("MIXTO")
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["TIPO_HORARIO"])).select_by_visible_text("COMERCIAL CALI")
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["DEPARTAMENTO_ASIGNADO"])).select_by_visible_text("COMERCIAL CALI")
-        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["ESTATUS_SEGUIMIENTO"])).select_by_visible_text("PROSPECTO NUEVO")
-        
-        # 5. GUARDAR
-        # Clic en el botón "Guardar"
+        try:
+            Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["OFERTA_EDUCATIVA"])) \
+                .select_by_visible_text(oferta_value)
+        except Exception:
+            return {
+                "status": "error",
+                "message": f"La oferta educativa '{oferta_value}' no existe en el CRM o no coincide exactamente."
+            }
+
+        # Selects fijos (ajusta textos si en el CRM se llaman distinto)
+        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["PERIODO"])) \
+            .select_by_visible_text("MIXTO")
+        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["TIPO_HORARIO"])) \
+            .select_by_visible_text("MIXTO")
+        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["DEPARTAMENTO_ASIGNADO"])) \
+            .select_by_visible_text("COMERCIAL CALI")
+        Select(driver.find_element(By.CSS_SELECTOR, SELECTORS["ESTATUS_SEGUIMIENTO"])) \
+            .select_by_visible_text("PROSPECTO NUEVO")
+
+        # ---------------------------
+        # 6) GUARDAR
+        # ---------------------------
         wait.until(EC.element_to_be_clickable((By.XPATH, SELECTORS["GUARDAR_BTN_XPATH"]))).click()
-        
-        # Esperar a que la URL cambie (confirmando que la acción de guardar fue exitosa)
-        wait.until(EC.url_changes(driver.current_url)) 
-        
+        wait.until(EC.url_changes(driver.current_url))
+
         return {"status": "success", "message": "Prospecto cargado exitosamente."}
-        
+
     except TimeoutException:
-        print("Error: Timeout al esperar un elemento.")
-        return {"status": "error", "message": "Tiempo de espera agotado (Timeout) durante la automatización."}
+        return {"status": "error", "message": "Timeout esperando elementos del CRM."}
     except NoSuchElementException as e:
-        print(f"Error: Elemento no encontrado: {e}")
-        return {"status": "error", "message": f"Elemento no encontrado en el CRM. El selector falló: {e}"}
+        return {"status": "error", "message": f"Elemento no encontrado en el CRM: {e}"}
     except WebDriverException as e:
-        print(f"Error del WebDriver: {e}")
         return {"status": "error", "message": f"Fallo del navegador (WebDriver): {e}"}
     except Exception as e:
-        print(f"Error general: {e}")
         return {"status": "error", "message": f"Error inesperado: {e}"}
     finally:
         if driver:
-            # Asegurar que el navegador se cierre para liberar recursos en Render
             driver.quit()
 
+
 # ==============================================================================
-# 3. RUTAS DE FLASK
+# 4) RUTAS FLASK
 # ==============================================================================
-@app.route('/cargar_prospecto', methods=['POST'])
+@app.route("/cargar_prospecto", methods=["POST", "OPTIONS"])
 def handle_cargar_prospecto():
-    """
-    Endpoint principal llamado por Google Apps Script.
-    Recibe un JSON con los datos del prospecto y llama a la automatización.
-    """
-    # Manejar solicitud OPTIONS (preflight CORS)
-    if request.method == 'OPTIONS':
-        # Responder con éxito y los encabezados CORS necesarios
+    # Preflight CORS
+    if request.method == "OPTIONS":
         response = jsonify({})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "POST")
         return response
 
-    # Manejar solicitud POST
     try:
-        data = request.json
+        data = request.get_json(silent=True)
         if not data:
             return jsonify({"status": "error", "message": "Datos JSON no recibidos."}), 400
-        
-        print(f"Iniciando carga de prospecto: {data.get('Nombre')}")
-        
-        # Ejecutar la lógica de automatización
+
         resultado = automatizar_crm(data)
-        
-        # Devolver la respuesta a Google Apps Script
         response = jsonify(resultado)
-        response.headers.add('Access-Control-Allow-Origin', '*') # CORS
+        response.headers.add("Access-Control-Allow-Origin", "*")
         return response, 200
 
     except Exception as e:
-        print(f"Error en el endpoint: {e}")
         response = jsonify({"status": "error", "message": f"Fallo interno del servidor: {e}"})
-        response.headers.add('Access-Control-Allow-Origin', '*') # CORS
+        response.headers.add("Access-Control-Allow-Origin", "*")
         return response, 500
 
-@app.route('/')
+
+@app.route("/")
 def health_check():
-    """Ruta para verificar que el servicio está corriendo (Health Check de Render)."""
     return "CRM Loader Service is running.", 200
 
-# ==============================================================================
-# 4. INICIO DE LA APLICACIÓN (Solo para testing local, Gunicorn la ignora)
-# ==============================================================================
-if __name__ == '__main__':
-    # Nota: Render usa Gunicorn, esta parte solo es útil para pruebas locales
-    app.run(host='0.0.0.0', port=5000)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
