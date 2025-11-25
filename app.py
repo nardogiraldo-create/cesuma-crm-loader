@@ -118,7 +118,10 @@ def automatizar_crm(data):
         driver.find_element(By.CSS_SELECTOR, SELECTORS["NOMBRE"]).send_keys(data.get("Nombre", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["APELLIDO_PATERNO"]).send_keys(data.get("Apellido Paterno", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["EMAIL"]).send_keys(data.get("Correo Electronico", ""))
-        driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).send_keys(data.get("Fecha Nacimiento", ""))
+      # Fecha fija siempre
+driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).clear()
+driver.find_element(By.CSS_SELECTOR, SELECTORS["FECHA_NACIMIENTO"]).send_keys("01/01/2000")
+
         driver.find_element(By.CSS_SELECTOR, SELECTORS["CURP_ID"]).send_keys(data.get("CURP_ID", ""))
         driver.find_element(By.CSS_SELECTOR, SELECTORS["TEL_CELULAR"]).send_keys(data.get("Telefono Celular", ""))
 
