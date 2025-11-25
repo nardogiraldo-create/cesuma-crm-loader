@@ -89,17 +89,41 @@ def make_driver() -> webdriver.Chrome:
     chrome_options.add_argument("--lang=es-ES")
     chrome_options.add_argument("--disable-notifications")
 
-    # binario chromium dentro del contenedor
-    if CHROME_BIN and os.path.exists(CHROME_BIN):
-        chrome_options.binary_location = CHROME_BIN
-        logger.info(f"✅ Usando Chrome bin: {CHROME_BIN}")
-    else:
-        logger.warning(f"⚠️ CHROME_BIN no existe en {CHROME_BIN}. Intentará default.")
+    # buscar binario de chrome en varias rutas
+    chrome_candidates = [
+        os.environ.get("CHROME_BIN", ""),
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome"
+    ]
+    for p in chrome_candidates:
+        if p and os.path.exists(p):
+            chrome_options.binary_location = p
+            logger.info(f"✅ Chrome encontrado en: {p}")
+            break
 
-    service = Service(CHROMEDRIVER_PATH)
+    # buscar chromedriver en varias rutas
+    driver_candidates = [
+        os.environ.get("CHROMEDRIVER_PATH", ""),
+        "/usr/bin/chromedriver",
+        "/usr/lib/chromium/chromedriver",
+        "/usr/lib/chromium-browser/chromedriver"
+    ]
+    driver_path = None
+    for p in driver_candidates:
+        if p and os.path.exists(p):
+            driver_path = p
+            logger.info(f"✅ ChromeDriver encontrado en: {p}")
+            break
+
+    if not driver_path:
+        raise RuntimeError(f"❌ ChromeDriver no encontrado. Revisar rutas: {driver_candidates}")
+
+    service = Service(driver_path)
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.set_page_load_timeout(90)
     return driver
+
 
 
 def wait(driver, t=DEFAULT_TIMEOUT):
