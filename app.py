@@ -3,6 +3,10 @@ from pydantic import BaseModel
 from datetime import datetime
 import os
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -53,23 +57,30 @@ def wait_for(driver, by, selector, timeout=15):
 
 
 def registrar_en_crm(nombre, apellido, correo, telefono):
+    logger.info(f"=== INICIANDO registro para {nombre} {apellido} ===")
+    logger.info(f"CRM_USER configurado: {'SI' if CRM_USER else 'NO - VACIO'}")
+    logger.info(f"CRM_PASS configurado: {'SI' if CRM_PASS else 'NO - VACIO'}")
+
     driver = get_driver()
     try:
         # ── 1. LOGIN ──────────────────────────────────────────────────────────
+        logger.info("Paso 1: Abriendo pagina de login...")
         driver.get(CRM_URL)
         wait_for(driver, By.ID, "txtUsuario")
+        logger.info("Paso 1: Campo usuario encontrado")
 
         driver.find_element(By.ID, "txtUsuario").clear()
         driver.find_element(By.ID, "txtUsuario").send_keys(CRM_USER)
         driver.find_element(By.ID, "txtContrasenia").clear()
         driver.find_element(By.ID, "txtContrasenia").send_keys(CRM_PASS)
         driver.find_element(By.ID, "lnkEntrar").click()
+        logger.info("Paso 1: Click en entrar, esperando redireccion...")
 
-        WebDriverWait(driver, 20).until(
-            EC.url_contains("Principal.aspx")
-        )
+        WebDriverWait(driver, 20).until(EC.url_contains("Principal.aspx"))
+        logger.info(f"Paso 1: Login exitoso. URL actual: {driver.current_url}")
 
         # ── 2. NAVEGAR A CAPTACIÓN ────────────────────────────────────────────
+        logger.info("Paso 2: Navegando a captacion...")
         driver.get("https://cesuma.academic.lat/Admin/Principal.aspx")
         time.sleep(2)
 
@@ -80,13 +91,17 @@ def registrar_en_crm(nombre, apellido, correo, telefono):
         time.sleep(1)
         driver.find_element(By.XPATH, "//a[contains(text(),'Captación') or contains(text(),'Captacion')]").click()
         time.sleep(2)
+        logger.info(f"Paso 2: Navegacion completa. URL: {driver.current_url}")
 
         # ── 3. NUEVO REGISTRO ─────────────────────────────────────────────────
+        logger.info("Paso 3: Haciendo click en Nuevo...")
         wait_for(driver, By.ID, "ctl00_ctl00_cphContentMain_cphFiltro_lnkNuevo")
         driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphFiltro_lnkNuevo").click()
         time.sleep(2)
+        logger.info("Paso 3: Formulario abierto")
 
         # ── 4. LLENAR FORMULARIO ──────────────────────────────────────────────
+        logger.info("Paso 4: Llenando formulario...")
         Select(wait_for(driver, By.ID, "ctl00_ctl00_cphContentMain_cphContenido_ddlFamExist")).select_by_value("0")
 
         campo = wait_for(driver, By.ID, "ctl00_ctl00_cphContentMain_cphContenido_txtNombre")
@@ -109,29 +124,26 @@ def registrar_en_crm(nombre, apellido, correo, telefono):
         campo.clear()
         campo.send_keys(telefono)
 
-        # Oferta educativa = 43 (DOCTORADO EN EDUCACIÓN)
         Select(driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphContenido_ddlOferta")).select_by_value("43")
         time.sleep(2)
 
-        # Periodo = 47 (Abr 26-Jul 26)
         driver.execute_script("SeleccionarPeriodo('Abr 26-Jul 26','47')")
         time.sleep(2)
 
-        # Tipo horario = 1 (MIXTO)
         Select(driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphContenido_ddlTipoHorarioInsc")).select_by_value("1")
-
-        # Departamento = 8 (COMERCIAL Posición Global)
         Select(driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphContenido_ddlDepartamento")).select_by_value("8")
-
-        # Estatus = 1 (PROSPECTO NUEVO)
         Select(driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphContenido_ddlEstatusSeguimiento")).select_by_value("1")
+        logger.info("Paso 4: Formulario llenado completo")
 
         # ── 5. GUARDAR ────────────────────────────────────────────────────────
+        logger.info("Paso 5: Guardando...")
         driver.find_element(By.ID, "ctl00_ctl00_cphContentMain_cphContenido_lnkGuardar").click()
         time.sleep(3)
+        logger.info(f"Paso 5: Guardado. URL después: {driver.current_url}")
 
         # ── 6. LEER RESULTADO ─────────────────────────────────────────────────
         page_text = driver.page_source.upper()
+        logger.info(f"Paso 6: Primeros 500 chars del HTML: {page_text[:500]}")
 
         if "YA CUENTA CON UN REGISTRO" in page_text or "COINCIDENCIA FUERTE" in page_text:
             resultado = "FUERTE"
@@ -143,6 +155,8 @@ def registrar_en_crm(nombre, apellido, correo, telefono):
             resultado = "AGREGADO"
             detalle   = "Registro creado exitosamente"
 
+        logger.info(f"Paso 6: Resultado final = {resultado}")
+
         return {
             "ok": True,
             "estado": "FINALIZADO",
@@ -152,6 +166,7 @@ def registrar_en_crm(nombre, apellido, correo, telefono):
         }
 
     except TimeoutException as e:
+        logger.error(f"TIMEOUT en paso: {str(e)[:200]}")
         return {
             "ok": False,
             "estado": "ERROR",
@@ -160,6 +175,7 @@ def registrar_en_crm(nombre, apellido, correo, telefono):
             "fecha_proceso": datetime.utcnow().isoformat()
         }
     except Exception as e:
+        logger.error(f"ERROR general: {str(e)[:200]}")
         return {
             "ok": False,
             "estado": "ERROR",
