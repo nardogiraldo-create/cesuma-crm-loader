@@ -1,118 +1,172 @@
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from datetime import datetime
 import os
-from flask import Flask, jsonify
-from flask_cors import CORS
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import asyncio
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
-# =======================================================
-# 1. CONFIGURACIÓN BÁSICA DE LA APLICACIÓN
-# =======================================================
+app = FastAPI(title="Academic CRM Uploader")
 
-# Inicialización de la aplicación Flask
-app = Flask(__name__)
-# Habilitar CORS para permitir peticiones desde diferentes orígenes
-CORS(app)
+API_TOKEN = os.getenv("API_TOKEN", "cambia-esto-por-tu-token")
+CRM_URL     = "https://cesuma.academic.lat/Autenticacion.aspx"
+CRM_USER    = os.getenv("CRM_USER", "")
+CRM_PASS    = os.getenv("CRM_PASSWORD", "")
 
-# Obtener variables de entorno
-# Estas variables son las que configuraste manualmente en Render
-CRM_URL = os.environ.get("CRM_URL", "http://placeholder.com")
-CRM_USER = os.environ.get("CRM_USER", "usuario_no_definido")
-CRM_PASSWORD = os.environ.get("CRM_PASSWORD", "password_no_definido")
-PORT = os.environ.get("PORT", "5000")
+class ProcessRowRequest(BaseModel):
+    token: str
+    spreadsheet_id: str
+    spreadsheet_name: str
+    sheet_name: str
+    row_number: int
+    nombre: str
+    apellido: str
+    correo: str
+    telefono: str
 
-# =======================================================
-# 2. CONFIGURACIÓN DEL DRIVER (SELENIUM/CHROMIUM)
-# =======================================================
+@app.get("/")
+def root():
+    return {"ok": True, "message": "Servicio activo"}
 
-def get_chrome_options():
-    """Configura las opciones de Chrome para ejecución Headless en Render."""
-    chrome_options = Options()
-    # Ejecución sin interfaz gráfica
-    chrome_options.add_argument("--headless")
-    # Argumentos de seguridad y estabilidad necesarios en entornos Linux/Docker
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    # Tamaño de ventana para simular un escritorio
-    chrome_options.add_argument("--window-size=1920,1080")
-    
-    # Asignar la ruta del binario de Chrome (instalado por Dockerfile)
-    # Se usa la variable de entorno que también está en el Dockerfile
-    chrome_options.binary_location = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-    
-    return chrome_options
+@app.post("/process-row")
+def process_row(payload: ProcessRowRequest):
+    if payload.token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Token inválido")
 
-# =======================================================
-# 3. ENDPOINTS DE LA APLICACIÓN
-# =======================================================
+    nombre   = payload.nombre.strip().upper()
+    apellido = payload.apellido.strip().upper()
+    correo   = payload.correo.strip()
+    telefono = payload.telefono.strip()
 
-# -------------------------------------------------------
-# RUTA PRINCIPAL (CORRECCIÓN DEL ERROR 'home')
-# -------------------------------------------------------
-# Función renombrada a 'index' para evitar el conflicto
-@app.route("/")
-def index():
-    """Ruta de bienvenida para verificar que la app de Flask está corriendo."""
-    return jsonify({
-        "status": "Service Running",
-        "message": "CRM Loader API is operational. Check /health for driver status.",
-        "crm_target": CRM_URL,
-        "env": os.environ.get("ENV", "DEV")
-    })
+    if not nombre or not apellido or not correo or not telefono:
+        return {
+            "ok": False,
+            "estado": "ERROR",
+            "resultado": "",
+            "detalle": "DATOS INCOMPLETOS",
+            "fecha_proceso": datetime.utcnow().isoformat()
+        }
 
-# -------------------------------------------------------
-# RUTA DE HEALTH CHECK (CRÍTICA PARA RENDER)
-# -------------------------------------------------------
-# Función renombrada a 'health_check' (evita el conflicto 'home')
-@app.route("/health")
-def health_check():
-    """Verifica si Gunicorn está activo y si Chromium/ChromeDriver funcionan."""
-    chrome_available = False
-    
-    try:
-        chrome_options = get_chrome_options()
-        # Inicializa el driver usando la ruta del Dockerfile/Variable de Entorno
-        driver = webdriver.Chrome(
-            options=chrome_options, 
-            executable_path=os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-        )
-        driver.quit()
-        chrome_available = True
-        
-    except Exception as e:
-        # Si el driver falla, el error se registra, pero el servidor sigue vivo
-        print(f"Health Check FAILED. Driver error: {e}")
-        
-    # Devuelve el estado del servicio
-    return jsonify({
-        "status": "healthy",
-        "chrome_available": chrome_available
-    })
-
-# -------------------------------------------------------
-# LÓGICA DEL LOADER (EJEMPLO DE UNA RUTA DE TRABAJO)
-# -------------------------------------------------------
-@app.route("/api/load_data", methods=["POST"])
-def load_data():
-    """Función para iniciar el proceso de carga de datos en el CRM (Lógica principal)."""
-    # **AQUÍ IRÍA TU LÓGICA DE SELENIUM PARA LOGIN Y CARGA DE DATOS**
-    
-    if os.environ.get("ENV") != "PROD":
-        return jsonify({"message": "Running in non-production mode, task simulated."})
-        
-    # Aquí puedes llamar a una función de la lógica del CRM Loader
-    # try:
-    #     iniciar_proceso(CRM_URL, CRM_USER, CRM_PASSWORD)
-    #     return jsonify({"status": "success", "message": "Data load initiated."})
-    # except Exception as e:
-    #     return jsonify({"status": "error", "message": str(e)}), 500
-        
-    return jsonify({"status": "pending", "message": "Implementación pendiente de la lógica de Selenium."})
+    resultado = asyncio.run(registrar_en_crm(nombre, apellido, correo, telefono))
+    return resultado
 
 
-# =======================================================
-# 4. INICIO DEL SERVIDOR
-# =======================================================
+async def registrar_en_crm(nombre, apellido, correo, telefono):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page    = await context.new_page()
 
-# Solo para ejecución local (Gunicorn se encarga de esto en Render)
-if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=int(PORT))
+        try:
+            # ── 1. LOGIN ──────────────────────────────────────────────────────
+            await page.goto(CRM_URL, wait_until="networkidle", timeout=30000)
+
+            await page.fill("#txtUsuario",     CRM_USER)
+            await page.fill("#txtContrasenia", CRM_PASS)
+            await page.click("#lnkEntrar")
+            await page.wait_for_url("**/Principal.aspx", timeout=20000)
+
+            # ── 2. NAVEGAR A CAPTACIÓN ────────────────────────────────────────
+            await page.goto(
+                "https://cesuma.academic.lat/Admin/Principal.aspx",
+                wait_until="networkidle", timeout=20000
+            )
+            # Menú: Captación y atención → Seguimiento → Captación
+            await page.click("text=Captación y atención")
+            await page.click("text=Seguimiento")
+            await page.click("text=Captación")
+            await page.wait_for_load_state("networkidle", timeout=15000)
+
+            # ── 3. NUEVO REGISTRO ─────────────────────────────────────────────
+            await page.click("#ctl00_ctl00_cphContentMain_cphFiltro_lnkNuevo")
+            await page.wait_for_load_state("networkidle", timeout=15000)
+
+            # ── 4. LLENAR FORMULARIO ──────────────────────────────────────────
+            # Familia = No registrar (valor 0)
+            await page.select_option(
+                "#ctl00_ctl00_cphContentMain_cphContenido_ddlFamExist", "0"
+            )
+
+            await page.fill(
+                "#ctl00_ctl00_cphContentMain_cphContenido_txtNombre", nombre
+            )
+            await page.fill(
+                "#ctl00_ctl00_cphContentMain_cphContenido_txtApellidoP", apellido
+            )
+            await page.fill("#txtFechaNac", "01/01/2000")
+            await page.fill(
+                "#ctl00_ctl00_cphContentMain_cphContenido_txtEmail", correo
+            )
+            await page.fill(
+                "#ctl00_ctl00_cphContentMain_cphContenido_txtCel", telefono
+            )
+
+            # Oferta educativa = 43 (DOCTORADO EN EDUCACIÓN)
+            await page.select_option(
+                "#ctl00_ctl00_cphContentMain_cphContenido_ddlOferta", "43"
+            )
+            await page.wait_for_load_state("networkidle", timeout=10000)
+
+            # Periodo = 47 (Abr 26-Jul 26)
+            await page.evaluate("SeleccionarPeriodo('Abr 26-Jul 26','47')")
+            await page.wait_for_load_state("networkidle", timeout=10000)
+
+            # Tipo horario = 1 (MIXTO)
+            await page.select_option(
+                "#ctl00_ctl00_cphContentMain_cphContenido_ddlTipoHorarioInsc", "1"
+            )
+
+            # Departamento = 8 (COMERCIAL Posición Global)
+            await page.select_option(
+                "#ctl00_ctl00_cphContentMain_cphContenido_ddlDepartamento", "8"
+            )
+
+            # Estatus = 1 (PROSPECTO NUEVO)
+            await page.select_option(
+                "#ctl00_ctl00_cphContentMain_cphContenido_ddlEstatusSeguimiento", "1"
+            )
+
+            # ── 5. GUARDAR ────────────────────────────────────────────────────
+            await page.click(
+                "#ctl00_ctl00_cphContentMain_cphContenido_lnkGuardar"
+            )
+            await page.wait_for_load_state("networkidle", timeout=20000)
+
+            # ── 6. LEER RESULTADO ─────────────────────────────────────────────
+            page_text = (await page.content()).upper()
+
+            if "YA CUENTA CON UN REGISTRO" in page_text or "COINCIDENCIA FUERTE" in page_text:
+                resultado  = "FUERTE"
+                detalle    = "Registro ya existe en la base de datos"
+            elif "COINCIDENCIA DÉBIL" in page_text or "COINCIDENCIA DEBIL" in page_text:
+                resultado  = "DEBIL"
+                detalle    = "Coincidencia débil detectada"
+            else:
+                resultado  = "AGREGADO"
+                detalle    = "Registro creado exitosamente"
+
+            return {
+                "ok": True,
+                "estado": "FINALIZADO",
+                "resultado": resultado,
+                "detalle": detalle,
+                "fecha_proceso": datetime.utcnow().isoformat()
+            }
+
+        except PlaywrightTimeout as e:
+            return {
+                "ok": False,
+                "estado": "ERROR",
+                "resultado": "",
+                "detalle": f"TIMEOUT: {str(e)[:120]}",
+                "fecha_proceso": datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "estado": "ERROR",
+                "resultado": "",
+                "detalle": f"ERROR: {str(e)[:120]}",
+                "fecha_proceso": datetime.utcnow().isoformat()
+            }
+        finally:
+            await browser.close()
